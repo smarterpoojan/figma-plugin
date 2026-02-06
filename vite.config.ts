@@ -10,7 +10,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         ui: resolve(__dirname, "src/ui/index.html"),
-        main: resolve(__dirname, "src/main/main.ts"),
+        main: resolve(__dirname, "src/main.ts"),
       },
       output: {
         entryFileNames: (chunk) => {
