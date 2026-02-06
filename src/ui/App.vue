@@ -47,6 +47,7 @@ import { onMounted, reactive } from "vue";
 import SectionList from "./components/SectionList.vue";
 import type { AssetKind, AvailableAssetsPayload, SelectionPayload, UiMessage } from "../shared/types";
 
+// Reactive state driven by messages from the plugin main thread.
 const selection = reactive<SelectionPayload>({
   hasSelection: false,
   variables: [],
@@ -58,12 +59,14 @@ const available = reactive<AvailableAssetsPayload>({
   styles: [],
 });
 
+// Local UI state for per-item replacement dropdowns.
 const replacementSelections = reactive<Record<string, string>>({});
 
 function updateSelection(payload: { id: string; value: string }) {
   replacementSelections[payload.id] = payload.value;
 }
 
+// Send replace requests to the main thread for application in the canvas.
 function handleReplace(payload: { kind: AssetKind; targetId: string }) {
   const replacementId = replacementSelections[payload.targetId];
   if (!replacementId || replacementId === payload.targetId) return;
@@ -86,6 +89,7 @@ function handleReplace(payload: { kind: AssetKind; targetId: string }) {
 }
 
 onMounted(() => {
+  // Listen for selection updates and available assets from the main thread.
   window.onmessage = (event: MessageEvent<UiMessage>) => {
     const message = event.data.pluginMessage;
     if (!message) return;
@@ -103,6 +107,7 @@ onMounted(() => {
     }
   };
 
+  // Notify the main thread that the UI is ready to receive data.
   parent.postMessage({ pluginMessage: { type: "ui-ready" } }, "*");
 });
 </script>

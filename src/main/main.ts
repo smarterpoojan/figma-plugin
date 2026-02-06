@@ -45,8 +45,14 @@ type VariablePropertyKey = (typeof VARIABLE_PROPERTY_KEYS)[number];
 type NodeWithBoundVariables = SceneNode & {
   boundVariables?: Record<string, string | string[] | null>;
   setBoundVariable?: (property: string, variableId: string | null) => void;
+  setBoundVariableForPaint?: (
+    paint: Paint,
+    field: "color" | "opacity" | "gradientStops" | "imageFilter" | "imageTransform",
+    variableId: string | null,
+  ) => void;
 };
 
+// Breadth-first traversal to collect the selection and all nested children.
 function getAllSceneNodes(rootNodes: readonly SceneNode[]): SceneNode[] {
   const collected: SceneNode[] = [];
   const queue = [...rootNodes];
@@ -63,12 +69,14 @@ function getAllSceneNodes(rootNodes: readonly SceneNode[]): SceneNode[] {
   return collected;
 }
 
+// Normalize usage maps into sorted arrays for the UI.
 function normalizeUsage<T extends { id: string; usageCount: number }>(
   map: Map<string, T>,
 ): T[] {
   return [...map.values()].sort((a, b) => b.usageCount - a.usageCount);
 }
 
+// Increment variable usage with a deduplicated map.
 function incrementVariableUsage(
   usageMap: Map<string, VariableUsage>,
   variableId: string,
@@ -90,6 +98,7 @@ function incrementVariableUsage(
   });
 }
 
+// Collect bound variables across supported node properties.
 function collectVariablesFromNode(
   node: NodeWithBoundVariables,
   usageMap: Map<string, VariableUsage>,
@@ -109,6 +118,7 @@ function collectVariablesFromNode(
   });
 }
 
+// Increment style usage with a deduplicated map.
 function incrementStyleUsage(
   usageMap: Map<string, StyleUsage>,
   styleId: string,
@@ -130,6 +140,7 @@ function incrementStyleUsage(
   });
 }
 
+// Collect paint/text/effect styles from a single node.
 function collectStylesFromNode(node: SceneNode, usageMap: Map<string, StyleUsage>) {
   const fillStyleId = (node as GeometryMixin).fillStyleId;
   if (typeof fillStyleId === "string") {
@@ -154,6 +165,7 @@ function collectStylesFromNode(node: SceneNode, usageMap: Map<string, StyleUsage
   }
 }
 
+// Scan the current selection and publish results to the UI.
 function scanSelection() {
   const selection = figma.currentPage.selection;
 
@@ -181,6 +193,7 @@ function scanSelection() {
   figma.ui.postMessage({ type: "selection-data", payload: selectionState });
 }
 
+// Load available local variables and styles for replacement dropdowns.
 async function loadAvailableAssets() {
   const variables = await figma.variables.getLocalVariablesAsync();
   availableAssets.variables = variables.map((variable) => ({
@@ -207,6 +220,7 @@ async function loadAvailableAssets() {
   figma.ui.postMessage({ type: "available-assets", payload: availableAssets });
 }
 
+// Replace bound variable IDs on the current selection (including children).
 function replaceVariables(targetId: string, replacementId: string) {
   const nodes = getAllSceneNodes(figma.currentPage.selection);
   nodes.forEach((node) => {
@@ -215,6 +229,25 @@ function replaceVariables(targetId: string, replacementId: string) {
 
     Object.entries(boundVariables).forEach(([property, value]) => {
       if (Array.isArray(value)) {
+        if (property === "fills" || property === "strokes") {
+          const paints = (node as GeometryMixin)[property];
+          if (Array.isArray(paints)) {
+            value.forEach((variableId, index) => {
+              if (variableId !== targetId) return;
+              const paint = paints[index];
+              if (!paint) return;
+              if (paint.type === "SOLID") {
+                (node as NodeWithBoundVariables).setBoundVariableForPaint?.(
+                  paint,
+                  "color",
+                  replacementId,
+                );
+              }
+            });
+          }
+          return;
+        }
+
         const updated = value.map((variableId) =>
           variableId === targetId ? replacementId : variableId,
         );
@@ -232,6 +265,7 @@ function replaceVariables(targetId: string, replacementId: string) {
   });
 }
 
+// Replace style IDs across the selection and children.
 function replaceStyles(targetId: string, replacementId: string) {
   const nodes = getAllSceneNodes(figma.currentPage.selection);
   nodes.forEach((node) => {
